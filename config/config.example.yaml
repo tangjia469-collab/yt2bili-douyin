@@ -1,0 +1,26 @@
+channels:
+  - id: UC_REPLACE_ME
+    name: 示例频道
+    priority: false        # true = 该频道视频走人审
+    prefer_asr: false      # 覆盖全局，null 表示跟随全局
+
+defaults:
+  prefer_asr: false
+  publish_time: "19:00"
+  max_duration_min: 60
+  publish_fail_threshold: 3
+  daily_publish_limit: 2
+  min_publish_gap_min: 30
+  subtitle_style:
+    font: "思源黑体"
+    font_size: 22
+    outline: 1
+    margin_v: 30
+
+api:
+  minimax_key: ${MINIMAX_KEY}
+
+biliup:
+  binary: biliup
+  tid: 122
+  tags: ["搬运", "中文字幕"]
