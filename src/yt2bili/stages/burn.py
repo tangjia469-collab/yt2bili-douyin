@@ -1,0 +1,87 @@
+"""Burn stage: hard-burn Chinese subtitles into video via ffmpeg."""
+
+from __future__ import annotations
+
+import logging
+import subprocess
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def burn_subtitles(
+    warehouse_dir: Path,
+    font: str = "思源黑体",
+    font_size: int = 22,
+    outline: int = 1,
+    margin_v: int = 30,
+) -> bool:
+    """Hard-burn zh.srt into source.mp4, producing final.mp4.
+
+    Uses ffmpeg ``subtitles`` video filter with ``force_style`` for font
+    control.  Audio stream is copied without re-encoding.
+
+    Args:
+        warehouse_dir: Directory containing ``source.mp4`` and ``zh.srt``.
+        font: Font name for subtitle rendering.
+        font_size: Font size in points.
+        outline: Outline (border) thickness in pixels.
+        margin_v: Vertical margin from the bottom edge in pixels.
+
+    Returns:
+        True on success (``final.mp4`` written), False on any failure.
+    """
+    warehouse_dir = Path(warehouse_dir)
+    source_mp4 = warehouse_dir / "source.mp4"
+    zh_srt = warehouse_dir / "zh.srt"
+    final_mp4 = warehouse_dir / "final.mp4"
+
+    if not source_mp4.exists():
+        logger.warning("burn_subtitles: source.mp4 not found in %s", warehouse_dir)
+        return False
+
+    if not zh_srt.exists():
+        logger.warning("burn_subtitles: zh.srt not found in %s", warehouse_dir)
+        return False
+
+    # Build the ASS override style string for ffmpeg subtitles filter.
+    force_style = (
+        f"Fontname={font},"
+        f"Fontsize={font_size},"
+        f"Outline={outline},"
+        f"MarginV={margin_v}"
+    )
+
+    # ffmpeg filter graph uses ':' as option separator and '\:' as a literal
+    # colon inside option values (e.g. Windows drive letters).  On macOS paths
+    # never contain colons so only backslashes need escaping.
+    srt_path_str = str(zh_srt.resolve()).replace("\\", "\\\\").replace(":", "\\:")
+
+    vf = f"subtitles={srt_path_str}:force_style='{force_style}'"
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", str(source_mp4),
+        "-vf", vf,
+        "-c:a", "copy",
+        str(final_mp4),
+    ]
+
+    logger.info("Burning subtitles into %s", final_mp4)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        logger.warning(
+            "ffmpeg burn failed (rc=%d): %s",
+            result.returncode,
+            result.stderr[-500:],
+        )
+        return False
+
+    if not final_mp4.exists():
+        logger.warning("ffmpeg exited 0 but final.mp4 not found in %s", warehouse_dir)
+        return False
+
+    logger.info("Subtitles burned → %s (%d bytes)", final_mp4, final_mp4.stat().st_size)
+    return True
