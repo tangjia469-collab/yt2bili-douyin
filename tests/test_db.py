@@ -48,12 +48,12 @@ def test_update_subtitle_source(tmp_path):
     assert v.subtitle_source == "youtube"
 
 
-def test_list_all_ids(tmp_path):
+def test_list_all(tmp_path):
     db = Database(tmp_path / "test.sqlite")
     db.init()
     db.insert_video("x1", "c", "u", "t", False)
     db.insert_video("x2", "c", "u", "t", False)
-    all_vids = db.list_all_ids()
+    all_vids = db.list_all()
     ids = {v.video_id for v in all_vids}
     assert ids == {"x1", "x2"}
 

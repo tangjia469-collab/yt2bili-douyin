@@ -63,18 +63,22 @@ class Database:
 
     def update_stage(self, video_id: str, state, error: Optional[str] = None):
         stage_val = state.value if isinstance(state, State) else state
-        with self._conn() as c:
-            c.execute(
+        with self._conn() as conn:
+            cur = conn.execute(
                 "UPDATE videos SET stage=?, error=?, updated_at=datetime('now') WHERE video_id=?",
                 (stage_val, error, video_id)
             )
+            if cur.rowcount == 0:
+                raise KeyError(f"video_id not found: {video_id}")
 
     def update_subtitle_source(self, video_id: str, source: str):
-        with self._conn() as c:
-            c.execute(
+        with self._conn() as conn:
+            cur = conn.execute(
                 "UPDATE videos SET subtitle_source=? WHERE video_id=?",
                 (source, video_id)
             )
+            if cur.rowcount == 0:
+                raise KeyError(f"video_id not found: {video_id}")
 
     def list_by_stage(self, state: State) -> List["Video"]:
         with self._conn() as c:
@@ -84,7 +88,7 @@ class Database:
             ).fetchall()
         return [self._row_to_video(r) for r in rows]
 
-    def list_all_ids(self) -> List["Video"]:
+    def list_all(self) -> List["Video"]:
         with self._conn() as c:
             rows = c.execute("SELECT * FROM videos").fetchall()
         return [self._row_to_video(r) for r in rows]
