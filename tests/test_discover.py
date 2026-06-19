@@ -1,5 +1,4 @@
 import json
-import unittest.mock as mock
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -51,7 +50,7 @@ def test_parse_entries_duration_filter():
         },
     ])
 
-    entries = discoverer._parse_entries(raw_json, channel_id="UCfake", is_priority=False)
+    entries = discoverer._parse_entries(raw_json)
 
     assert len(entries) == 2
 
@@ -75,7 +74,7 @@ def test_parse_entries_exact_boundary():
         },
     ])
 
-    entries = discoverer._parse_entries(raw_json, channel_id="UCfake", is_priority=False)
+    entries = discoverer._parse_entries(raw_json)
     assert entries[0]["skip"] is False
 
 
@@ -92,7 +91,7 @@ def test_parse_entries_missing_duration():
         },
     ])
 
-    entries = discoverer._parse_entries(raw_json, channel_id="UCfake", is_priority=False)
+    entries = discoverer._parse_entries(raw_json)
     assert len(entries) == 1
     assert entries[0]["skip"] is False
 
@@ -144,7 +143,7 @@ def test_filter_new_none_known():
 # test_discover_channel integration (mocked subprocess)
 # ---------------------------------------------------------------------------
 
-def test_discover_channel_inserts_and_skips_long(tmp_path):
+def test_discover_channel_inserts_and_skips_long():
     """_discover_channel: short video inserted as DISCOVERED; long video gets SKIPPED_LONG."""
     defaults = Defaults(max_duration_min=60)
     channel = Channel(id="UCfake", name="Fake", priority=False)

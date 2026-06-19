@@ -1,10 +1,13 @@
 import json
+import logging
 import subprocess
 from typing import Dict, List, Optional, Set
 
 from .config import Channel, Config
 from .db import Database
 from .states import State
+
+logger = logging.getLogger(__name__)
 
 
 class Discoverer:
@@ -23,7 +26,7 @@ class Discoverer:
     def _discover_channel(self, channel: Channel) -> None:
         """Fetch new entries for one channel and persist them to the DB."""
         raw_json = self._fetch_channel(channel.id)
-        entries = self._parse_entries(raw_json, channel.id, channel.priority)
+        entries = self._parse_entries(raw_json)
 
         known_ids: Set[str] = {v.video_id for v in self.db.list_all()}
         new_entries = self._filter_new(entries, known_ids)
@@ -50,24 +53,34 @@ class Discoverer:
         )
         return result.stdout
 
-    def _parse_entries(
-        self, raw_json: str, channel_id: str, is_priority: bool
-    ) -> List[Dict]:
+    def _parse_entries(self, raw_json: str) -> List[Dict]:
         """Parse yt-dlp flat-playlist JSON into a list of entry dicts.
 
         Each dict contains:
             video_id, title, url, duration, skip
         skip is True when duration > max_duration_min * 60 seconds.
         """
+        try:
+            data = json.loads(raw_json)
+        except json.JSONDecodeError as exc:
+            logger.error("Failed to parse yt-dlp JSON output: %s", exc)
+            raise
+
+        if "entries" not in data:
+            logger.warning("Parsed JSON has no 'entries' key; treating as empty playlist")
+
         max_seconds = self.config.defaults.max_duration_min * 60
-        data = json.loads(raw_json)
         entries: List[Dict] = []
         for item in data.get("entries", []):
+            video_id = item.get("id")
+            if video_id is None:
+                logger.warning("Skipping entry with missing 'id': %s", item)
+                continue
             duration: int = item.get("duration") or 0
             entries.append({
-                "video_id": item["id"],
+                "video_id": video_id,
                 "title": item.get("title", ""),
-                "url": item.get("url", f"https://www.youtube.com/watch?v={item['id']}"),
+                "url": item.get("url", f"https://www.youtube.com/watch?v={video_id}"),
                 "duration": duration,
                 "skip": duration > max_seconds,
             })
