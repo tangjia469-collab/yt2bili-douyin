@@ -7,3 +7,15 @@ __pycache__/
 *.pyc
 .venv/
 *.wav
+*.part
+*.ytdl
+*.m4a
+*.mkv
+.env
+.env.local
+.DS_Store
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+*.egg-info/
