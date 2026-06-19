@@ -1,0 +1,9 @@
+warehouse/
+logs/
+config/secrets.yaml
+db.sqlite
+db.sqlite-journal
+__pycache__/
+*.pyc
+.venv/
+*.wav

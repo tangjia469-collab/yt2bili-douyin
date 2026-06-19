@@ -1,0 +1,5 @@
+yt-dlp>=2025.10.14
+requests>=2.31
+PyYAML>=6.0
+pytest>=7.0
+typer>=0.9
