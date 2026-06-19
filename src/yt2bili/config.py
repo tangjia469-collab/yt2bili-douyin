@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
+from typing import Optional, List, Union
 from pathlib import Path
-from typing import Optional, List
 import yaml
 
 
@@ -32,14 +32,33 @@ class Defaults:
 
 
 @dataclass
+class ApiConfig:
+    minimax_key: str = ""
+
+
+@dataclass
+class BiliupConfig:
+    binary: str = "biliup"
+    tid: int = 122
+    tags: list = field(default_factory=lambda: ["搬运", "中文字幕"])
+
+
+@dataclass
 class Config:
     channels: List[Channel] = field(default_factory=list)
     defaults: Defaults = field(default_factory=Defaults)
+    api: ApiConfig = field(default_factory=ApiConfig)
+    biliup: BiliupConfig = field(default_factory=BiliupConfig)
 
 
-def load_config(path) -> Config:
-    with open(path) as f:
-        raw = yaml.safe_load(f)
+def load_config(path: Union[str, Path]) -> Config:
+    try:
+        with open(path) as f:
+            raw = yaml.safe_load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Config file not found: {path}")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in config file: {e}")
 
     channels = []
     for c in raw.get("channels", []):
@@ -51,8 +70,15 @@ def load_config(path) -> Config:
         ))
 
     defaults_raw = raw.get("defaults", {})
-    style_raw = defaults_raw.pop("subtitle_style", {})
+    style_raw = defaults_raw.get("subtitle_style", {})
+    defaults_raw_clean = {k: v for k, v in defaults_raw.items() if k != "subtitle_style"}
     subtitle_style = SubtitleStyle(**style_raw) if style_raw else SubtitleStyle()
-    defaults = Defaults(subtitle_style=subtitle_style, **defaults_raw)
+    defaults = Defaults(subtitle_style=subtitle_style, **defaults_raw_clean)
 
-    return Config(channels=channels, defaults=defaults)
+    api_raw = raw.get("api", {})
+    api = ApiConfig(**api_raw) if api_raw else ApiConfig()
+
+    biliup_raw = raw.get("biliup", {})
+    biliup = BiliupConfig(**biliup_raw) if biliup_raw else BiliupConfig()
+
+    return Config(channels=channels, defaults=defaults, api=api, biliup=biliup)
