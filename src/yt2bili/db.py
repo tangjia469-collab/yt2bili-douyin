@@ -45,6 +45,18 @@ class Database:
                 )
             """)
             c.execute("CREATE INDEX IF NOT EXISTS idx_stage ON videos(stage)")
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """)
 
     def insert_video(self, video_id: str, channel_id: str, source_url: str, title: str, is_priority: bool):
         with self._conn() as c:
@@ -80,13 +92,38 @@ class Database:
             if cur.rowcount == 0:
                 raise KeyError(f"video_id not found: {video_id}")
 
-    def list_by_stage(self, state: State) -> List["Video"]:
+    def list_by_stage(self, state) -> List["Video"]:
+        stage_val = state.value if isinstance(state, State) else state
         with self._conn() as c:
             rows = c.execute(
                 "SELECT * FROM videos WHERE stage=? ORDER BY updated_at",
-                (state.value,)
+                (stage_val,)
             ).fetchall()
         return [self._row_to_video(r) for r in rows]
+
+    def mark_published(self, video_id: str):
+        """Set stage=published and stamp published_at=now."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE videos SET stage=?, published_at=datetime('now'), "
+                "error=NULL, updated_at=datetime('now') WHERE video_id=?",
+                (State.PUBLISHED.value, video_id)
+            )
+            if cur.rowcount == 0:
+                raise KeyError(f"video_id not found: {video_id}")
+
+    def get_meta(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        with self._conn() as c:
+            row = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row["value"] if row is not None else default
+
+    def set_meta(self, key: str, value: str):
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value)
+            )
 
     def list_all(self) -> List["Video"]:
         with self._conn() as c:
