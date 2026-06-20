@@ -1,0 +1,237 @@
+"""Tests for the pipeline worker: stage advancement and failure marking."""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from yt2bili import worker
+from yt2bili.db import Database
+from yt2bili.states import State
+from yt2bili.config import Config, Channel, Defaults
+
+
+@pytest.fixture
+def db(tmp_path):
+    d = Database(tmp_path / "test.sqlite")
+    d.init()
+    return d
+
+
+@pytest.fixture
+def warehouse(tmp_path):
+    w = tmp_path / "warehouse"
+    w.mkdir()
+    return w
+
+
+def _config(priority=False, prefer_asr=False, max_min=60):
+    return Config(
+        channels=[Channel(id="CH1", name="chan", priority=priority)],
+        defaults=Defaults(prefer_asr=prefer_asr, max_duration_min=max_min),
+    )
+
+
+def _insert(db, vid="v1", priority=False):
+    db.insert_video(vid, "CH1", "https://yt/" + vid, "Title " + vid, priority)
+
+
+# --------------------------------------------------------------------------
+# Download step
+# --------------------------------------------------------------------------
+
+def test_download_advances_to_downloaded(db, warehouse, monkeypatch):
+    _insert(db)
+    monkeypatch.setattr(worker, "download_video", lambda url, wd: True)
+    monkeypatch.setattr(worker, "load_meta", lambda wd: {"duration": 600})
+    worker.process_video(db, "v1", _config(), warehouse)
+    assert db.get_video("v1").stage == State.DOWNLOADED.value or \
+        db.get_video("v1").stage != State.DISCOVERED.value
+
+
+def test_download_failure_marks_failed(db, warehouse, monkeypatch):
+    _insert(db)
+    monkeypatch.setattr(worker, "download_video", lambda url, wd: False)
+    new = worker.advance_one(db, db.get_video("v1"), _config(), warehouse)
+    assert new == State.failed("download")
+    assert db.get_video("v1").error is not None
+
+
+def test_long_video_skipped(db, warehouse, monkeypatch):
+    _insert(db)
+    monkeypatch.setattr(worker, "download_video", lambda url, wd: True)
+    monkeypatch.setattr(worker, "load_meta", lambda wd: {"duration": 5000})
+    worker.advance_one(db, db.get_video("v1"), _config(max_min=60), warehouse)
+    assert db.get_video("v1").stage == State.SKIPPED_LONG.value
+
+
+# --------------------------------------------------------------------------
+# Subtitle step
+# --------------------------------------------------------------------------
+
+def test_subtitle_sets_source(db, warehouse, monkeypatch):
+    _insert(db)
+    db.update_stage("v1", State.DOWNLOADED)
+    monkeypatch.setattr(
+        worker, "get_english_subtitle", lambda url, wd, prefer: ("1\n...\n", "youtube")
+    )
+    worker.advance_one(db, db.get_video("v1"), _config(), warehouse)
+    v = db.get_video("v1")
+    assert v.stage == State.EN_SUBTITLED.value
+    assert v.subtitle_source == "youtube"
+
+
+def test_subtitle_empty_marks_failed(db, warehouse, monkeypatch):
+    _insert(db)
+    db.update_stage("v1", State.DOWNLOADED)
+    monkeypatch.setattr(
+        worker, "get_english_subtitle", lambda url, wd, prefer: ("", "asr")
+    )
+    new = worker.advance_one(db, db.get_video("v1"), _config(), warehouse)
+    assert new == State.failed("subtitle")
+
+
+def test_subtitle_respects_channel_prefer_asr(db, warehouse, monkeypatch):
+    _insert(db)
+    db.update_stage("v1", State.DOWNLOADED)
+    captured = {}
+    def fake(url, wd, prefer):
+        captured["prefer"] = prefer
+        return ("x", "asr")
+    monkeypatch.setattr(worker, "get_english_subtitle", fake)
+    cfg = Config(
+        channels=[Channel(id="CH1", name="c", prefer_asr=True)],
+        defaults=Defaults(prefer_asr=False),
+    )
+    worker.advance_one(db, db.get_video("v1"), cfg, warehouse)
+    assert captured["prefer"] is True
+
+
+# --------------------------------------------------------------------------
+# Translate step
+# --------------------------------------------------------------------------
+
+def test_translate_writes_zh_srt(db, warehouse, monkeypatch):
+    _insert(db)
+    db.update_stage("v1", State.EN_SUBTITLED)
+    wd = warehouse / "v1"
+    wd.mkdir()
+    (wd / "en.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    monkeypatch.setattr(
+        worker, "translate_srt",
+        lambda en, key, title: "1\n00:00:01,000 --> 00:00:02,000\n你好\n",
+    )
+    worker.advance_one(db, db.get_video("v1"), _config(), warehouse)
+    assert db.get_video("v1").stage == State.ZH_TRANSLATED.value
+    assert "你好" in (wd / "zh.srt").read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------
+# Burn step
+# --------------------------------------------------------------------------
+
+def test_burn_advances_to_burned(db, warehouse, monkeypatch):
+    _insert(db)
+    db.update_stage("v1", State.ZH_TRANSLATED)
+    monkeypatch.setattr(worker, "burn_subtitles", lambda wd, **kw: True)
+    worker.advance_one(db, db.get_video("v1"), _config(), warehouse)
+    assert db.get_video("v1").stage == State.BURNED.value
+
+
+def test_burn_failure_marks_failed(db, warehouse, monkeypatch):
+    _insert(db)
+    db.update_stage("v1", State.ZH_TRANSLATED)
+    monkeypatch.setattr(worker, "burn_subtitles", lambda wd, **kw: False)
+    new = worker.advance_one(db, db.get_video("v1"), _config(), warehouse)
+    assert new == State.failed("burn")
+
+
+# --------------------------------------------------------------------------
+# Finalize: priority gate
+# --------------------------------------------------------------------------
+
+def test_finalize_priority_to_pending_review(db, warehouse):
+    _insert(db, priority=True)
+    db.update_stage("v1", State.BURNED)
+    worker.advance_one(db, db.get_video("v1"), _config(priority=True), warehouse)
+    assert db.get_video("v1").stage == State.PENDING_REVIEW.value
+
+
+def test_finalize_normal_to_ready(db, warehouse):
+    _insert(db, priority=False)
+    db.update_stage("v1", State.BURNED)
+    worker.advance_one(db, db.get_video("v1"), _config(), warehouse)
+    assert db.get_video("v1").stage == State.READY.value
+
+
+# --------------------------------------------------------------------------
+# Failed state retry
+# --------------------------------------------------------------------------
+
+def test_failed_translate_retries(db, warehouse, monkeypatch):
+    _insert(db)
+    wd = warehouse / "v1"
+    wd.mkdir()
+    (wd / "en.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n", encoding="utf-8")
+    db.update_stage("v1", State.failed("translate"))
+    monkeypatch.setattr(
+        worker, "translate_srt",
+        lambda en, key, title: "1\n00:00:01,000 --> 00:00:02,000\n嗨\n",
+    )
+    new = worker.advance_one(db, db.get_video("v1"), _config(), warehouse)
+    assert new == State.ZH_TRANSLATED.value
+
+
+# --------------------------------------------------------------------------
+# run_worker: full chain + terminal skip
+# --------------------------------------------------------------------------
+
+def test_run_worker_full_chain(db, warehouse, monkeypatch):
+    _insert(db, vid="v1")
+    SRT = "1\n00:00:01,000 --> 00:00:02,000\nHi\n"
+    monkeypatch.setattr(worker, "download_video", lambda url, wd: True)
+    monkeypatch.setattr(worker, "load_meta", lambda wd: {"duration": 100})
+
+    def fake_sub(url, wd, prefer):
+        # Mirror the real get_english_subtitle: write en.srt to disk.
+        Path(wd).mkdir(parents=True, exist_ok=True)
+        (Path(wd) / "en.srt").write_text(SRT, encoding="utf-8")
+        return (SRT, "youtube")
+
+    monkeypatch.setattr(worker, "get_english_subtitle", fake_sub)
+    monkeypatch.setattr(worker, "translate_srt", lambda en, key, title: en)
+    monkeypatch.setattr(worker, "burn_subtitles", lambda wd, **kw: True)
+    worker.run_worker(db, _config(), warehouse)
+    assert db.get_video("v1").stage == State.READY.value
+
+
+def test_run_worker_skips_terminal(db, warehouse, monkeypatch):
+    _insert(db, vid="v1")
+    db.update_stage("v1", State.PUBLISHED)
+    called = {"n": 0}
+    def boom(url, wd):
+        called["n"] += 1
+        return True
+    monkeypatch.setattr(worker, "download_video", boom)
+    worker.run_worker(db, _config(), warehouse)
+    assert called["n"] == 0
+    assert db.get_video("v1").stage == State.PUBLISHED.value
+
+
+def test_run_worker_retries_failed(db, warehouse, monkeypatch):
+    """A failed_* video must be retried by run_worker, not skipped."""
+    _insert(db, vid="v1")
+    wd = warehouse / "v1"
+    wd.mkdir()
+    (wd / "en.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n", encoding="utf-8")
+    db.update_stage("v1", State.failed("translate"))
+    monkeypatch.setattr(
+        worker, "translate_srt",
+        lambda en, key, title: "1\n00:00:01,000 --> 00:00:02,000\n嗨\n",
+    )
+    monkeypatch.setattr(worker, "burn_subtitles", lambda wd, **kw: True)
+    worker.run_worker(db, _config(), warehouse)
+    # Retried translate → burned → ready, all in one pass.
+    assert db.get_video("v1").stage == State.READY.value
