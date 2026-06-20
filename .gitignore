@@ -1,6 +1,10 @@
 warehouse/
 logs/
 config/secrets.yaml
+# Real config holds a plaintext MiniMax key — never commit it.
+config.yaml
+cookies.json
+*.sqlite
 db.sqlite
 db.sqlite-journal
 __pycache__/

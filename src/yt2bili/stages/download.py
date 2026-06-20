@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import glob
 import json
+import logging
 import subprocess
 from pathlib import Path
 from typing import Dict
+
+logger = logging.getLogger(__name__)
 
 
 def download_video(url: str, warehouse_dir: Path) -> bool:
@@ -36,6 +38,7 @@ def download_video(url: str, warehouse_dir: Path) -> bool:
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
+        logger.warning("yt-dlp failed (returncode %d): %s", result.returncode, result.stderr)
         return False
 
     # yt-dlp with --merge-output-format mp4 should produce source.mp4,
@@ -43,10 +46,10 @@ def download_video(url: str, warehouse_dir: Path) -> bool:
     source_mp4 = warehouse_dir / "source.mp4"
     if not source_mp4.exists():
         # Search for any source.* file that isn't the info json and rename it.
-        candidates = [
+        candidates = sorted(
             p for p in warehouse_dir.glob("source.*")
             if not p.name.endswith(".info.json") and p.suffix != ".json"
-        ]
+        )
         if candidates:
             candidates[0].rename(source_mp4)
 
@@ -70,7 +73,7 @@ def load_meta(warehouse_dir: Path) -> Dict:
     if not matches:
         return {}
 
-    info_path = matches[0]
+    info_path = sorted(matches)[0]
     try:
         with info_path.open("r", encoding="utf-8") as fh:
             return json.load(fh)
