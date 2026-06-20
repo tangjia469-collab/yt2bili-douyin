@@ -40,13 +40,16 @@ _TERMINAL = {
 
 # Maps the "current stage" to the stage name used for retry dispatch. A
 # ``failed_<stage>`` video re-enters at the *predecessor* state so the same
-# step runs again.
-_FAILED_RETRY_ENTRY = {
+# step runs again. Public so the dashboard's "retry" action can reuse it.
+FAILED_RETRY_ENTRY = {
     State.failed("download"): State.DISCOVERED.value,
     State.failed("subtitle"): State.DOWNLOADED.value,
     State.failed("translate"): State.EN_SUBTITLED.value,
     State.failed("burn"): State.ZH_TRANSLATED.value,
 }
+
+# Backwards-compatible private alias (kept for the internal dispatch below).
+_FAILED_RETRY_ENTRY = FAILED_RETRY_ENTRY
 
 
 def _channel_prefer_asr(config: Config, channel_id: str) -> bool:

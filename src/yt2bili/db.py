@@ -92,6 +92,15 @@ class Database:
             if cur.rowcount == 0:
                 raise KeyError(f"video_id not found: {video_id}")
 
+    def set_priority(self, video_id: str, is_priority: bool):
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE videos SET is_priority=?, updated_at=datetime('now') WHERE video_id=?",
+                (int(is_priority), video_id)
+            )
+            if cur.rowcount == 0:
+                raise KeyError(f"video_id not found: {video_id}")
+
     def list_by_stage(self, state) -> List["Video"]:
         stage_val = state.value if isinstance(state, State) else state
         with self._conn() as c:

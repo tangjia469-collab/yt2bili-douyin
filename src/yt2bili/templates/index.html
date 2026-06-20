@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>yt2bili 控制台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div x-data="dashboard()" x-init="init()" x-cloak class="max-w-6xl mx-auto p-6">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold">yt2bili 控制台</h1>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-slate-500" x-text="lastUpdated"></span>
+        <template x-if="publishPaused">
+          <button @click="resumePublish()"
+            class="px-3 py-1.5 rounded bg-red-600 text-white text-sm hover:bg-red-700">
+            发布已暂停 — 点此恢复
+          </button>
+        </template>
+        <button @click="refresh()"
+          class="px-3 py-1.5 rounded bg-slate-200 text-sm hover:bg-slate-300">刷新</button>
+      </div>
+    </header>
+
+    <!-- Stat cards -->
+    <section class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+      <template x-for="card in cards" :key="card.key">
+        <button @click="setFilter(card.stageFilter)"
+          class="rounded-lg border bg-white p-4 text-left hover:shadow transition"
+          :class="filter === card.stageFilter ? 'ring-2 ring-sky-500' : ''">
+          <div class="text-2xl font-bold" x-text="stats[card.key] ?? 0"></div>
+          <div class="text-xs text-slate-500 mt-1" x-text="card.label"></div>
+        </button>
+      </template>
+    </section>
+
+    <!-- Filter bar -->
+    <div class="flex items-center gap-2 mb-3 text-sm">
+      <span class="text-slate-500">筛选:</span>
+      <button @click="setFilter('')"
+        class="px-2 py-1 rounded" :class="filter === '' ? 'bg-sky-600 text-white' : 'bg-slate-200'">全部</button>
+      <input type="text" x-model="search" placeholder="搜索标题…"
+        class="ml-auto px-3 py-1.5 border rounded w-48" />
+    </div>
+
+    <!-- Video table -->
+    <div class="overflow-x-auto rounded-lg border bg-white">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-100 text-slate-600">
+          <tr>
+            <th class="text-left p-3">标题</th>
+            <th class="text-left p-3">状态</th>
+            <th class="text-left p-3">字幕源</th>
+            <th class="text-left p-3">更新时间</th>
+            <th class="text-right p-3">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="v in filteredVideos" :key="v.video_id">
+            <tr class="border-t hover:bg-slate-50">
+              <td class="p-3">
+                <div class="font-medium flex items-center gap-2">
+                  <span x-text="v.title"></span>
+                  <template x-if="v.is_priority">
+                    <span class="text-amber-500" title="重点视频">★</span>
+                  </template>
+                </div>
+                <a :href="v.source_url" target="_blank"
+                  class="text-xs text-sky-600 hover:underline" x-text="v.video_id"></a>
+              </td>
+              <td class="p-3">
+                <span class="inline-block px-2 py-0.5 rounded text-xs font-medium"
+                  :class="stageClass(v.stage)" x-text="stageLabel(v.stage)"></span>
+                <template x-if="v.error">
+                  <div class="text-xs text-red-500 mt-1 max-w-xs truncate" :title="v.error" x-text="v.error"></div>
+                </template>
+              </td>
+              <td class="p-3 text-slate-500" x-text="v.subtitle_source || '—'"></td>
+              <td class="p-3 text-slate-500 text-xs" x-text="v.updated_at"></td>
+              <td class="p-3 text-right whitespace-nowrap">
+                <template x-if="v.stage === 'pending_review'">
+                  <button @click="act(v.video_id, 'approve')"
+                    class="px-2 py-1 rounded bg-green-600 text-white text-xs hover:bg-green-700">批准</button>
+                </template>
+                <template x-if="v.stage.startsWith('failed_')">
+                  <button @click="act(v.video_id, 'retry')"
+                    class="px-2 py-1 rounded bg-sky-600 text-white text-xs hover:bg-sky-700">重试</button>
+                </template>
+                <template x-if="v.stage !== 'published' && v.stage !== 'skipped'">
+                  <button @click="act(v.video_id, 'skip')"
+                    class="px-2 py-1 rounded bg-slate-200 text-xs hover:bg-slate-300">跳过</button>
+                </template>
+                <button @click="act(v.video_id, 'priority')"
+                  class="px-2 py-1 rounded text-xs hover:bg-slate-100"
+                  :class="v.is_priority ? 'text-amber-500' : 'text-slate-400'"
+                  title="切换重点">★</button>
+              </td>
+            </tr>
+          </template>
+          <template x-if="filteredVideos.length === 0">
+            <tr><td colspan="5" class="p-6 text-center text-slate-400">没有视频</td></tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    function dashboard() {
+      return {
+        stats: {}, videos: [], filter: '', search: '',
+        publishPaused: false, lastUpdated: '',
+        cards: [
+          { key: 'processing',     label: '处理中',   stageFilter: '' },
+          { key: 'pending_review', label: '待审核',   stageFilter: 'pending_review' },
+          { key: 'ready',          label: '已就绪',   stageFilter: 'ready' },
+          { key: 'published',      label: '已发布',   stageFilter: 'published' },
+          { key: 'failed',         label: '失败',     stageFilter: '' },
+          { key: 'skipped',        label: '已跳过',   stageFilter: 'skipped' },
+        ],
+        init() {
+          this.refresh();
+          setInterval(() => this.refresh(), 30000);
+        },
+        async refresh() {
+          const [s, v, p] = await Promise.all([
+            fetch('/api/stats').then(r => r.json()),
+            fetch('/api/videos').then(r => r.json()),
+            fetch('/api/publish-status').then(r => r.json()),
+          ]);
+          this.stats = s; this.videos = v; this.publishPaused = p.paused;
+          this.lastUpdated = '更新于 ' + new Date().toLocaleTimeString();
+        },
+        get filteredVideos() {
+          return this.videos.filter(v => {
+            const stageOk = !this.filter || v.stage === this.filter;
+            const searchOk = !this.search ||
+              (v.title || '').toLowerCase().includes(this.search.toLowerCase());
+            return stageOk && searchOk;
+          });
+        },
+        setFilter(f) { this.filter = f; },
+        async act(id, action) {
+          const r = await fetch(`/api/videos/${id}/${action}`, { method: 'POST' });
+          if (!r.ok) {
+            const e = await r.json();
+            alert('操作失败: ' + (e.error || r.status));
+          }
+          this.refresh();
+        },
+        async resumePublish() {
+          await fetch('/api/resume-publish', { method: 'POST' });
+          this.refresh();
+        },
+        stageLabel(s) {
+          const map = {
+            discovered: '已发现', downloaded: '已下载', en_subtitled: '英文字幕',
+            zh_translated: '已翻译', burned: '已烧录', pending_review: '待审核',
+            ready: '已就绪', published: '已发布', skipped: '已跳过', skipped_long: '超长跳过',
+          };
+          if (s.startsWith('failed_')) return '失败:' + s.slice(7);
+          return map[s] || s;
+        },
+        stageClass(s) {
+          if (s.startsWith('failed_')) return 'bg-red-100 text-red-700';
+          if (s === 'published') return 'bg-green-100 text-green-700';
+          if (s === 'ready') return 'bg-sky-100 text-sky-700';
+          if (s === 'pending_review') return 'bg-amber-100 text-amber-700';
+          if (s === 'skipped' || s === 'skipped_long') return 'bg-slate-100 text-slate-500';
+          return 'bg-indigo-100 text-indigo-700';
+        },
+      };
+    }
+  </script>
+</body>
+</html>
