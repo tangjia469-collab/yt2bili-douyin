@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.yt2bili.publish</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__VENV_PY__</string>
+    <string>-m</string>
+    <string>yt2bili.runner</string>
+    <string>publish</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key>
+    <string>__PROJECT__/src</string>
+    <key>YT2BILI_HOME</key>
+    <string>__YT2BILI_HOME__</string>
+    <key>PATH</key>
+    <string>__PATH__</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT__</string>
+
+  <!-- Run daily at 19:00 (publish_time in config controls intent; launchd
+       fires the job, the publisher itself honors daily limit + gap) -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>19</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__YT2BILI_HOME__/logs/publish.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__YT2BILI_HOME__/logs/publish.err.log</string>
+</dict>
+</plist>

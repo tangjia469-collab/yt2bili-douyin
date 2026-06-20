@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.yt2bili.discover</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__VENV_PY__</string>
+    <string>-m</string>
+    <string>yt2bili.runner</string>
+    <string>discover</string>
+  </array>
+
+  <!-- src/ on the import path so `yt2bili` resolves -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key>
+    <string>__PROJECT__/src</string>
+    <key>YT2BILI_HOME</key>
+    <string>__YT2BILI_HOME__</string>
+    <key>PATH</key>
+    <string>__PATH__</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT__</string>
+
+  <!-- Run hourly -->
+  <key>StartInterval</key>
+  <integer>3600</integer>
+
+  <key>StandardOutPath</key>
+  <string>__YT2BILI_HOME__/logs/discover.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__YT2BILI_HOME__/logs/discover.err.log</string>
+</dict>
+</plist>

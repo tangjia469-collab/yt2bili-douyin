@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.yt2bili.web</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__VENV_PY__</string>
+    <string>-m</string>
+    <string>yt2bili.runner</string>
+    <string>web</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key>
+    <string>__PROJECT__/src</string>
+    <key>YT2BILI_HOME</key>
+    <string>__YT2BILI_HOME__</string>
+    <key>PATH</key>
+    <string>__PATH__</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT__</string>
+
+  <!-- Long-lived: keep the dashboard up; relaunch if it dies -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__YT2BILI_HOME__/logs/web.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__YT2BILI_HOME__/logs/web.err.log</string>
+</dict>
+</plist>
