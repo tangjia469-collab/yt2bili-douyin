@@ -81,8 +81,14 @@ def test_translate_batches():
 
 
 def test_translate_fallback_on_short_response():
-    """If MiniMax returns fewer items than expected, fallback to English text."""
-    with patch("yt2bili.stages.translate.call_minimax", return_value=["只有一条"]):
+    """When MiniMax can't translate a line (wrong count even for a single
+    line), that line falls back to English; timeline stays intact.
+
+    The resilient translator recursively splits a mismatched batch. The mock
+    returns an empty list regardless of input, so even single-line batches
+    never match and must fall back to the original English text.
+    """
+    with patch("yt2bili.stages.translate.call_minimax", return_value=[]):
         result = translate_srt(SAMPLE_SRT, api_key="fake")
 
     cues = parse_srt(result)
@@ -92,6 +98,20 @@ def test_translate_fallback_on_short_response():
     assert cues[1]["text"] == "This is a test"
     # Timestamps must still be intact
     assert cues[0]["start"] == "00:00:01,000"
+
+
+def test_translate_partial_mismatch_only_loses_bad_line():
+    """A batch where MiniMax drops one line: resilient split keeps the good
+    translations and only the unresolvable line stays English."""
+    # First call (2 lines) returns 1 item → mismatch → split into two 1-line
+    # calls. Each 1-line call returns exactly 1 item → both translate fine.
+    with patch("yt2bili.stages.translate.call_minimax",
+               side_effect=lambda texts, key, title="": ["译:" + t for t in texts]):
+        result = translate_srt(SAMPLE_SRT, api_key="fake")
+
+    cues = parse_srt(result)
+    assert cues[0]["text"] == "译:Hello world"
+    assert cues[1]["text"] == "译:This is a test"
 
 
 def test_call_minimax_strips_numbering():
@@ -119,3 +139,30 @@ def test_call_minimax_strips_numbering():
         result = call_minimax(["Hello world", "This is a test"], api_key="fake")
 
     assert result == ["你好世界", "这是测试"]
+
+
+def test_call_minimax_parses_json_array():
+    """call_minimax should prefer exact JSON array responses."""
+    import json
+    import urllib.request
+
+    fake_response_body = json.dumps({
+        "choices": [{
+            "message": {
+                "content": "[\"你好世界\", \"这是一个测试\"]"
+            }
+        }]
+    }).encode("utf-8")
+
+    class FakeResponse:
+        def read(self):
+            return fake_response_body
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    with patch("urllib.request.urlopen", return_value=FakeResponse()):
+        result = call_minimax(["Hello world", "This is a test"], api_key="fake")
+
+    assert result == ["你好世界", "这是一个测试"]

@@ -220,6 +220,21 @@ def test_run_worker_skips_terminal(db, warehouse, monkeypatch):
     assert db.get_video("v1").stage == State.PUBLISHED.value
 
 
+def test_run_worker_skips_quality_skipped(db, warehouse, monkeypatch):
+    _insert(db, vid="v1")
+    db.update_stage("v1", State.SKIPPED_QUALITY)
+    called = {"n": 0}
+
+    def boom(url, wd):
+        called["n"] += 1
+        return True
+
+    monkeypatch.setattr(worker, "download_video", boom)
+    worker.run_worker(db, _config(), warehouse)
+    assert called["n"] == 0
+    assert db.get_video("v1").stage == State.SKIPPED_QUALITY.value
+
+
 def test_run_worker_retries_failed(db, warehouse, monkeypatch):
     """A failed_* video must be retried by run_worker, not skipped."""
     _insert(db, vid="v1")

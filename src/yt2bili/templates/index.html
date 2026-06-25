@@ -163,7 +163,7 @@
           const map = {
             discovered: '已发现', downloaded: '已下载', en_subtitled: '英文字幕',
             zh_translated: '已翻译', burned: '已烧录', pending_review: '待审核',
-            ready: '已就绪', published: '已发布', skipped: '已跳过', skipped_long: '超长跳过',
+            ready: '已就绪', published: '已发布', skipped: '已跳过', skipped_long: '超长跳过', skipped_quality: '质量跳过',
           };
           if (s.startsWith('failed_')) return '失败:' + s.slice(7);
           return map[s] || s;
@@ -173,7 +173,7 @@
           if (s === 'published') return 'bg-green-100 text-green-700';
           if (s === 'ready') return 'bg-sky-100 text-sky-700';
           if (s === 'pending_review') return 'bg-amber-100 text-amber-700';
-          if (s === 'skipped' || s === 'skipped_long') return 'bg-slate-100 text-slate-500';
+          if (s === 'skipped' || s === 'skipped_long' || s === 'skipped_quality') return 'bg-slate-100 text-slate-500';
           return 'bg-indigo-100 text-indigo-700';
         },
       };

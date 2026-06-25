@@ -73,8 +73,13 @@ cp config.yaml.example ~/yt2bili/config.yaml
 ```
 
 至少要改两处：
-- `channels` 下填你已获授权的 YouTube 频道 ID（形如 `UCxxxx`）
+- `channels` 下填你已获授权的 YouTube 频道，支持 `@handle`（如 `@ASMR-Melle`）、`UCxxxx` 频道 ID 或频道 URL
 - `api.minimax_key` 填你的 MiniMax API key（明文，配置文件已被 git 忽略）
+
+可选但推荐：
+- 开启 `defaults.quality_gate_enabled: true`
+- `quality_gate_ratio: 0.8` 表示：新视频的点赞数或评论数，只要任一项达到该频道近期平均水平的 80%，就进入处理；两项都低于门槛则标记为“质量跳过”
+- `quality_gate_recent_count` 控制用于计算平均值的近期视频数量
 
 > 数据默认放在 `~/yt2bili/`。想换目录，设环境变量 `YT2BILI_HOME`。
 
@@ -136,4 +141,3 @@ export PYTHONPATH=src
 ```
 
 详细设计见 `docs/plans/`。
-

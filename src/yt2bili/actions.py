@@ -74,7 +74,7 @@ _PROCESSING = {
     State.ZH_TRANSLATED.value,
     State.BURNED.value,
 }
-_SKIPPED = {State.SKIPPED.value, State.SKIPPED_LONG.value}
+_SKIPPED = {State.SKIPPED.value, State.SKIPPED_LONG.value, State.SKIPPED_QUALITY.value}
 
 
 def stats(db: Database) -> Dict[str, int]:

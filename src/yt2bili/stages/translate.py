@@ -14,12 +14,13 @@ logger = logging.getLogger(__name__)
 
 MINIMAX_URL = "https://api.minimax.chat/v1/text/chatcompletion_v2"
 MINIMAX_MODEL = "abab6.5s-chat"
-BATCH_SIZE = 50
+BATCH_SIZE = 20
 
 _SYSTEM_PROMPT = (
     "你是一名专业字幕翻译员。将英文字幕翻译成简体中文。"
     "保持每条字幕的简洁，适合屏幕显示。"
-    "只输出翻译结果，每行对应一条字幕，不要加编号或解释。"
+    "必须逐条翻译，不要合并、删除、改顺序。"
+    "只输出 JSON 字符串数组，不要加解释，不要 Markdown。"
 )
 
 
@@ -65,6 +66,49 @@ def build_srt(entries: List[Dict]) -> str:
 # MiniMax API call
 # ---------------------------------------------------------------------------
 
+def _strip_json_fence(content: str) -> str:
+    """Remove common Markdown code fences around a JSON response."""
+    content = content.strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*", "", content, flags=re.I)
+        content = re.sub(r"\s*```$", "", content)
+    return content.strip()
+
+
+def _parse_minimax_translations(content: str) -> List[str]:
+    """Parse MiniMax output as JSON array first, then numbered/plain lines."""
+    raw = _strip_json_fence(content)
+
+    # Preferred format: a JSON array of strings.
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start != -1 and end > start:
+            try:
+                parsed = json.loads(raw[start:end + 1])
+            except json.JSONDecodeError:
+                parsed = None
+        else:
+            parsed = None
+    if isinstance(parsed, list):
+        result = []
+        for item in parsed:
+            if isinstance(item, str):
+                result.append(item.strip())
+            elif isinstance(item, dict):
+                value = item.get("text") or item.get("translation") or item.get("zh")
+                result.append(str(value).strip() if value is not None else "")
+            else:
+                result.append(str(item).strip())
+        return result
+
+    # Backward compatibility: numbered or one-translation-per-line output.
+    lines = [l.strip() for l in content.strip().splitlines() if l.strip()]
+    return [re.sub(r"^\d+[\.、]\s*", "", line).strip() for line in lines]
+
+
 def call_minimax(texts: List[str], api_key: str, title: str = "") -> List[str]:
     """Send a batch of subtitle lines to MiniMax and return translated lines.
 
@@ -78,7 +122,12 @@ def call_minimax(texts: List[str], api_key: str, title: str = "") -> List[str]:
         Returns empty list on API error.
     """
     numbered = "\n".join(f"{i+1}. {t}" for i, t in enumerate(texts))
-    user_content = f"视频标题：{title}\n\n请翻译以下字幕：\n{numbered}" if title else f"请翻译以下字幕：\n{numbered}"
+    user_content = (
+        f"视频标题：{title}\n\n"
+        f"请把下面 {len(texts)} 条字幕翻译成简体中文，并返回长度正好为 {len(texts)} 的 JSON 字符串数组。"
+        "每个数组元素对应同序号的一条字幕；拟声词/音效也要保留或翻译，不要省略。\n\n"
+        f"{numbered}"
+    )
 
     payload = {
         "model": MINIMAX_MODEL,
@@ -115,18 +164,33 @@ def call_minimax(texts: List[str], api_key: str, title: str = "") -> List[str]:
         logger.error("Unexpected MiniMax response structure: %s — %s", exc, body)
         return []
 
-    # Parse numbered lines from response; strip leading "N. " or "N、"
-    lines = [l.strip() for l in content.strip().splitlines() if l.strip()]
-    cleaned = []
-    for line in lines:
-        cleaned.append(re.sub(r"^\d+[\.、]\s*", "", line))
-
-    return cleaned
+    return _parse_minimax_translations(content)
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def _translate_batch_resilient(texts: List[str], api_key: str, title: str = "") -> List[str]:
+    """Translate a batch; split and retry if MiniMax returns the wrong count."""
+    zh_texts = call_minimax(texts, api_key, title)
+    if len(zh_texts) == len(texts):
+        return zh_texts
+
+    logger.warning(
+        "MiniMax returned %d items for batch of %d",
+        len(zh_texts), len(texts),
+    )
+    if len(texts) <= 1:
+        logger.warning("Keeping English for one subtitle line after MiniMax count mismatch")
+        return texts
+
+    mid = len(texts) // 2
+    return (
+        _translate_batch_resilient(texts[:mid], api_key, title)
+        + _translate_batch_resilient(texts[mid:], api_key, title)
+    )
+
 
 def translate_srt(en_srt: str, api_key: str, title: str = "") -> str:
     """Translate an English SRT string to Chinese SRT.
@@ -152,14 +216,7 @@ def translate_srt(en_srt: str, api_key: str, title: str = "") -> str:
         batch = cues[batch_start: batch_start + BATCH_SIZE]
         texts = [c["text"] for c in batch]
 
-        zh_texts = call_minimax(texts, api_key, title)
-
-        if len(zh_texts) != len(batch):
-            logger.warning(
-                "MiniMax returned %d items for batch of %d; keeping English",
-                len(zh_texts), len(batch),
-            )
-            zh_texts = texts  # fallback: keep English
+        zh_texts = _translate_batch_resilient(texts, api_key, title)
 
         for cue, zh in zip(batch, zh_texts):
             translated_cues.append({

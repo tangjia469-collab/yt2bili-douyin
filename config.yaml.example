@@ -7,12 +7,12 @@
 # 授权频道清单：只搬运你有授权的频道
 # ---------------------------------------------------------------------------
 channels:
-  - id: UCxxxxxxxxxxxxxxxxxxxxxx   # YouTube 频道 ID（频道主页 URL 里的那串）
+  - id: "@example_handle"          # YouTube @handle；也支持 UCxxxx 频道 ID 或频道 URL
     name: 示例频道A                 # 备注名，方便你自己认
     priority: false                # false=自动直发；true=发布前停下等你审核
     # prefer_asr: false            # 可选：覆盖全局字幕源偏好（不写则跟随 defaults）
 
-  - id: UCyyyyyyyyyyyyyyyyyyyyyy
+  - id: UCyyyyyyyyyyyyyyyyyyyyyy   # 也可以继续填传统频道 ID
     name: 示例频道B（重点）
     priority: true                 # 这个频道的视频都要人工审核才发
 
@@ -26,8 +26,12 @@ defaults:
   publish_fail_threshold: 3        # 连续发布失败几次后自动暂停发布器（保账号安全）
   daily_publish_limit: 2           # 每天最多发几条
   min_publish_gap_min: 30          # 两条发布之间至少间隔几分钟
+  quality_gate_enabled: true       # true=开启质量门槛；false=发现新视频就处理
+  quality_gate_ratio: 0.8          # 点赞数或评论数达到该频道近期平均值的 80% 即通过
+  quality_gate_recent_count: 20    # 用每个频道最近多少条视频计算平均值
+  quality_gate_min_samples: 3      # 至少拿到多少条有效数据才启用门槛；不足则不跳过
   subtitle_style:                  # 硬烧中文字幕的样式
-    font: "思源黑体"
+    font: "PingFang SC"        # 中文字体，macOS 自带（思源黑体需另装）
     font_size: 22
     outline: 1
     margin_v: 30

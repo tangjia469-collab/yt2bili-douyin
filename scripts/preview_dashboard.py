@@ -40,7 +40,7 @@ def main() -> None:
     db.init()
     _seed(db)
     app = web.create_app(db)
-    app.run(host="127.0.0.1", port=8080, debug=False)
+    app.run(host="127.0.0.1", port=9999, debug=False)
 
 
 if __name__ == "__main__":

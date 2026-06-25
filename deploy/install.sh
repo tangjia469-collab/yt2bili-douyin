@@ -9,7 +9,7 @@
 #   com.yt2bili.discover  hourly        scan channels for new videos
 #   com.yt2bili.worker    every 10 min  advance the pipeline
 #   com.yt2bili.publish   daily 19:00   upload ready videos
-#   com.yt2bili.web       always on     dashboard at http://127.0.0.1:8080
+#   com.yt2bili.web       always on     dashboard at http://127.0.0.1:9999
 #
 # Re-running is safe: existing jobs are unloaded first.
 
@@ -24,7 +24,11 @@ DEPLOY="${PROJECT}/deploy"
 
 # launchd jobs get a minimal PATH; include common locations for ffmpeg,
 # yt-dlp, whisper-cli, biliup (Homebrew + ~/.local/bin).
-JOB_PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin"
+# ffmpeg-full is keg-only and MUST come first: the regular `ffmpeg` formula
+# ships without libass, so its `subtitles` filter is missing and subtitle
+# burning fails. Putting ffmpeg-full's bin ahead guarantees the worker uses
+# the libass-enabled build.
+JOB_PATH="/opt/homebrew/opt/ffmpeg-full/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin"
 
 if [[ ! -x "${VENV_PY}" ]]; then
   echo "ERROR: venv python not found at ${VENV_PY}" >&2
@@ -60,7 +64,7 @@ for job in "${JOBS[@]}"; do
 done
 
 echo
-echo "Done. Dashboard: http://127.0.0.1:8080"
+echo "Done. Dashboard: http://127.0.0.1:9999"
 echo "Logs: ${YT2BILI_HOME}/logs/"
 echo
 echo "Next steps if you haven't yet:"

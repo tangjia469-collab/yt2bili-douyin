@@ -139,6 +139,38 @@ def test_filter_new_none_known():
     assert len(result) == 2
 
 
+def test_channel_videos_url_supports_handle():
+    """Configured YouTube @handles should be accepted directly."""
+    discoverer = _make_discoverer()
+    assert discoverer._channel_videos_url("@ASMR-Melle") == "https://www.youtube.com/@ASMR-Melle/videos"
+
+
+def test_quality_gate_skips_below_80_percent_baseline():
+    """A video below both like/comment baselines is marked skipped_quality."""
+    defaults = Defaults(
+        quality_gate_enabled=True,
+        quality_gate_ratio=0.8,
+        quality_gate_recent_count=3,
+        quality_gate_min_samples=3,
+    )
+    config = Config(channels=[], defaults=defaults)
+    db = MagicMock(spec=Database)
+    db.list_all.return_value = []
+    discoverer = Discoverer(config=config, db=db)
+
+    entries = [
+        {"video_id": "a", "title": "A", "url": "u", "duration": 10, "skip": False, "skip_reason": None, "like_count": 100, "comment_count": 100},
+        {"video_id": "b", "title": "B", "url": "u", "duration": 10, "skip": False, "skip_reason": None, "like_count": 100, "comment_count": 100},
+        {"video_id": "c", "title": "C", "url": "u", "duration": 10, "skip": False, "skip_reason": None, "like_count": 100, "comment_count": 100},
+        {"video_id": "d", "title": "D", "url": "u", "duration": 10, "skip": False, "skip_reason": None, "like_count": 70, "comment_count": 70},
+        {"video_id": "e", "title": "E", "url": "u", "duration": 10, "skip": False, "skip_reason": None, "like_count": 80, "comment_count": 1},
+    ]
+
+    gated = discoverer._apply_quality_gate(entries)
+    assert gated[3]["skip_reason"] == "quality"
+    assert gated[4]["skip_reason"] is None
+
+
 # ---------------------------------------------------------------------------
 # test_discover_channel integration (mocked subprocess)
 # ---------------------------------------------------------------------------

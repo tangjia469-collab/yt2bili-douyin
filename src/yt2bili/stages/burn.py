@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def burn_subtitles(
     warehouse_dir: Path,
-    font: str = "思源黑体",
+    font: str = "PingFang SC",
     font_size: int = 22,
     outline: int = 1,
     margin_v: int = 30,
@@ -45,10 +45,16 @@ def burn_subtitles(
         return False
 
     # Build the ASS override style string for ffmpeg subtitles filter.
+    # Commas separate force_style key=value pairs, but a comma is also the
+    # ffmpeg filtergraph separator. Since we pass -vf as a single argv element
+    # (no shell), the commas inside force_style MUST be backslash-escaped or
+    # ffmpeg parses them as new filters ("Error parsing filterchain"). Do NOT
+    # wrap the value in single quotes here — without a shell those quotes are
+    # literal characters and break parsing.
     force_style = (
-        f"Fontname={font},"
-        f"Fontsize={font_size},"
-        f"Outline={outline},"
+        f"Fontname={font}\\,"
+        f"Fontsize={font_size}\\,"
+        f"Outline={outline}\\,"
         f"MarginV={margin_v}"
     )
 
@@ -57,7 +63,7 @@ def burn_subtitles(
     # never contain colons so only backslashes need escaping.
     srt_path_str = str(zh_srt.resolve()).replace("\\", "\\\\").replace(":", "\\:")
 
-    vf = f"subtitles={srt_path_str}:force_style='{force_style}'"
+    vf = f"subtitles={srt_path_str}:force_style={force_style}"
 
     cmd = [
         "ffmpeg",

@@ -87,7 +87,7 @@ def create_app(db: Database) -> Flask:
     return app
 
 
-def run(db_path: Optional[Path] = None, host: str = "127.0.0.1", port: int = 8080) -> None:
+def run(db_path: Optional[Path] = None, host: str = "127.0.0.1", port: int = 9999) -> None:
     """Entry point: start the dashboard server.
 
     Args:

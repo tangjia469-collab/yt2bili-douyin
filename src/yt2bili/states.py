@@ -11,6 +11,7 @@ class State(Enum):
     READY = "ready"
     PUBLISHED = "published"
     SKIPPED_LONG = "skipped_long"
+    SKIPPED_QUALITY = "skipped_quality"
     SKIPPED = "skipped"
 
     @classmethod

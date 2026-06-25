@@ -96,11 +96,11 @@ def run_publish_job() -> None:
 
 
 def run_web() -> None:
-    """launchd: KeepAlive. Serve the dashboard at http://127.0.0.1:8080."""
+    """launchd: KeepAlive. Serve the dashboard at http://127.0.0.1:9999."""
     paths, db, config = _bootstrap("web")
-    logger.info("Web dashboard starting on http://127.0.0.1:8080")
+    logger.info("Web dashboard starting on http://127.0.0.1:9999")
     app = web.create_app(db)
-    app.run(host="127.0.0.1", port=8080, debug=False)
+    app.run(host="127.0.0.1", port=9999, debug=False)
 
 
 # Convenience for `python -m yt2bili.runner <job>`.

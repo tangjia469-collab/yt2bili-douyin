@@ -36,6 +36,7 @@ _TERMINAL = {
     State.PUBLISHED.value,
     State.SKIPPED.value,
     State.SKIPPED_LONG.value,
+    State.SKIPPED_QUALITY.value,
 }
 
 # Maps the "current stage" to the stage name used for retry dispatch. A

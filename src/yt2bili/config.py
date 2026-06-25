@@ -14,7 +14,7 @@ class Channel:
 
 @dataclass
 class SubtitleStyle:
-    font: str = "思源黑体"
+    font: str = "PingFang SC"
     font_size: int = 22
     outline: int = 1
     margin_v: int = 30
@@ -28,6 +28,10 @@ class Defaults:
     publish_fail_threshold: int = 3
     daily_publish_limit: int = 2
     min_publish_gap_min: int = 30
+    quality_gate_enabled: bool = False
+    quality_gate_ratio: float = 0.8
+    quality_gate_recent_count: int = 20
+    quality_gate_min_samples: int = 3
     subtitle_style: SubtitleStyle = field(default_factory=SubtitleStyle)
 
 
