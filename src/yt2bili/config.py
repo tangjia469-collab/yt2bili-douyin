@@ -32,7 +32,7 @@ class Defaults:
     quality_gate_ratio: float = 0.8
     quality_gate_recent_count: int = 20
     quality_gate_min_samples: int = 3
-    max_cached_videos: int = 5
+    max_cached_videos: int = 3
     subtitle_style: SubtitleStyle = field(default_factory=SubtitleStyle)
 
 
