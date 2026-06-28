@@ -20,6 +20,7 @@ from .db import Database
 from .discover import Discoverer
 from .worker import run_worker
 from .publisher import run_publisher
+from .douyin_publisher import run_douyin_publisher
 from . import web
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,14 @@ def run_publish_job() -> None:
     logger.info("Publish job done")
 
 
+def run_douyin_publish_job() -> None:
+    """launchd: daily. Drain Bilibili-published videos to Douyin."""
+    paths, db, config = _bootstrap("douyin-publish")
+    logger.info("Douyin publish job starting")
+    run_douyin_publisher(db, config, paths.warehouse)
+    logger.info("Douyin publish job done")
+
+
 def run_web() -> None:
     """launchd: KeepAlive. Serve the dashboard at http://127.0.0.1:9999."""
     paths, db, config = _bootstrap("web")
@@ -108,6 +117,7 @@ _JOBS = {
     "discover": run_discover,
     "worker": run_worker_job,
     "publish": run_publish_job,
+    "douyin-publish": run_douyin_publish_job,
     "web": run_web,
 }
 

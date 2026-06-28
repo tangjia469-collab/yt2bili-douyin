@@ -97,3 +97,20 @@ def test_run_publish_invokes_run_publisher(tmp_path, monkeypatch):
 
     runner.run_publish_job()
     assert seen.get("called") is True
+
+
+def test_run_douyin_publish_invokes_run_douyin_publisher(tmp_path, monkeypatch):
+    root = tmp_path / "yt2bili"
+    root.mkdir()
+    _write_config(root / "config.yaml")
+    monkeypatch.setenv("YT2BILI_HOME", str(root))
+
+    seen = {}
+    def fake_run_douyin_publisher(db, config, warehouse):
+        seen["called"] = True
+        seen["warehouse"] = warehouse
+    monkeypatch.setattr(runner, "run_douyin_publisher", fake_run_douyin_publisher)
+
+    runner.run_douyin_publish_job()
+    assert seen.get("called") is True
+    assert seen["warehouse"] == root / "warehouse"

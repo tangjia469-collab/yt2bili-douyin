@@ -32,6 +32,7 @@ class Defaults:
     quality_gate_ratio: float = 0.8
     quality_gate_recent_count: int = 20
     quality_gate_min_samples: int = 3
+    max_cached_videos: int = 5
     subtitle_style: SubtitleStyle = field(default_factory=SubtitleStyle)
 
 
@@ -45,6 +46,17 @@ class BiliupConfig:
     binary: str = "biliup"
     tid: int = 122
     tags: list = field(default_factory=lambda: ["搬运", "中文字幕"])
+    submit: str = "web"
+
+
+@dataclass
+class DouyinConfig:
+    enabled: bool = False
+    upload_url: str = "https://creator.douyin.com/creator-micro/content/upload"
+    daily_publish_limit: int = 2
+    min_publish_gap_min: int = 60
+    publish_fail_threshold: int = 3
+    tags: list = field(default_factory=lambda: ["ASMR", "助眠"])
 
 
 @dataclass
@@ -53,6 +65,7 @@ class Config:
     defaults: Defaults = field(default_factory=Defaults)
     api: ApiConfig = field(default_factory=ApiConfig)
     biliup: BiliupConfig = field(default_factory=BiliupConfig)
+    douyin: DouyinConfig = field(default_factory=DouyinConfig)
 
 
 def load_config(path: Union[str, Path]) -> Config:
@@ -85,4 +98,7 @@ def load_config(path: Union[str, Path]) -> Config:
     biliup_raw = raw.get("biliup", {})
     biliup = BiliupConfig(**biliup_raw) if biliup_raw else BiliupConfig()
 
-    return Config(channels=channels, defaults=defaults, api=api, biliup=biliup)
+    douyin_raw = raw.get("douyin", {})
+    douyin = DouyinConfig(**douyin_raw) if douyin_raw else DouyinConfig()
+
+    return Config(channels=channels, defaults=defaults, api=api, biliup=biliup, douyin=douyin)

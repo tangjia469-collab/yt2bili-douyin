@@ -11,6 +11,30 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
+def _has_video_stream(path: Path) -> bool:
+    ffprobe = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffprobe")
+    binary = str(ffprobe) if ffprobe.exists() else "ffprobe"
+    result = subprocess.run(
+        [
+            binary,
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=codec_type",
+            "-of", "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        data = json.loads(result.stdout if isinstance(result.stdout, str) else "{}")
+    except json.JSONDecodeError:
+        return False
+    return bool(data.get("streams"))
+
+
 def download_video(url: str, warehouse_dir: Path) -> bool:
     """Download video and audio via yt-dlp, merge to mp4, write info JSON.
 
@@ -28,7 +52,7 @@ def download_video(url: str, warehouse_dir: Path) -> bool:
 
     cmd = [
         "yt-dlp",
-        "-f", "bestvideo+bestaudio/best",
+        "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/best[ext=mp4]/best",
         "--merge-output-format", "mp4",
         "-o", output_template,
         "--write-info-json",
@@ -41,17 +65,21 @@ def download_video(url: str, warehouse_dir: Path) -> bool:
         logger.warning("yt-dlp failed (returncode %d): %s", result.returncode, result.stderr)
         return False
 
-    # yt-dlp with --merge-output-format mp4 should produce source.mp4,
-    # but handle the edge case where another extension was written.
+    # yt-dlp with --merge-output-format mp4 should produce source.mp4.
+    # If separate source.* files remain, choose one that actually has video.
     source_mp4 = warehouse_dir / "source.mp4"
-    if not source_mp4.exists():
-        # Search for any source.* file that isn't the info json and rename it.
+    if not source_mp4.exists() or not _has_video_stream(source_mp4):
         candidates = sorted(
             p for p in warehouse_dir.glob("source.*")
             if not p.name.endswith(".info.json") and p.suffix != ".json"
         )
-        if candidates:
-            candidates[0].rename(source_mp4)
+        video_candidates = [p for p in candidates if _has_video_stream(p)]
+        if video_candidates:
+            video_candidates[0].replace(source_mp4)
+
+    if not source_mp4.exists() or not _has_video_stream(source_mp4):
+        logger.warning("yt-dlp did not produce a playable source.mp4 with video in %s", warehouse_dir)
+        return False
 
     return True
 

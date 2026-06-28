@@ -114,6 +114,26 @@ def test_translate_partial_mismatch_only_loses_bad_line():
     assert cues[1]["text"] == "译:This is a test"
 
 
+def test_translate_mismatch_with_extra_items_recovers_by_splitting():
+    """When MiniMax returns too many items for a batch, recursive splitting
+    should retry smaller chunks and preserve all translations when those smaller
+    calls return exact counts."""
+    calls = []
+
+    def fake_call(texts, api_key, title=""):
+        calls.append(list(texts))
+        if len(texts) == 2:
+            return ["多余1", "多余2", "多余3"]
+        return ["译:" + texts[0]]
+
+    with patch("yt2bili.stages.translate.call_minimax", side_effect=fake_call):
+        result = translate_srt(SAMPLE_SRT, api_key="fake")
+
+    cues = parse_srt(result)
+    assert [c["text"] for c in cues] == ["译:Hello world", "译:This is a test"]
+    assert calls == [["Hello world", "This is a test"], ["Hello world"], ["This is a test"]]
+
+
 def test_call_minimax_strips_numbering():
     """call_minimax should strip leading numbering like '1. ' from responses."""
     import json

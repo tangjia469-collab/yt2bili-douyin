@@ -44,27 +44,33 @@ def test_publish_returns_false_if_final_mp4_missing(warehouse: Path, cfg: Biliup
 
 def test_publish_returns_true_on_success(warehouse: Path, cfg: BiliupConfig):
     _make_final(warehouse)
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-    mock_result.stderr = ""
+    upload_result = MagicMock(returncode=0, stdout="BV1234567890", stderr="")
+    show_result = MagicMock(
+        returncode=0,
+        stdout='{"archive":{"state":0,"state_desc":"已通过","duration":10,"had_passed":true}}',
+        stderr="",
+    )
 
-    with patch("subprocess.run", return_value=mock_result) as mock_run:
+    with patch("subprocess.run", side_effect=[upload_result, show_result]) as mock_run:
         result = publish_video(warehouse, "My Video", cfg)
 
     assert result is True
-    mock_run.assert_called_once()
+    assert mock_run.call_count == 2
 
 
 def test_publish_calls_biliup_with_correct_args(warehouse: Path, cfg: BiliupConfig):
     _make_final(warehouse)
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-    mock_result.stderr = ""
+    upload_result = MagicMock(returncode=0, stdout="BV1234567890", stderr="")
+    show_result = MagicMock(
+        returncode=0,
+        stdout='{"archive":{"state":0,"state_desc":"已通过","duration":10,"had_passed":true}}',
+        stderr="",
+    )
 
-    with patch("subprocess.run", return_value=mock_result) as mock_run:
+    with patch("subprocess.run", side_effect=[upload_result, show_result]) as mock_run:
         publish_video(warehouse, "Test Title", cfg)
 
-    call_args = mock_run.call_args[0][0]  # positional list
+    call_args = mock_run.call_args_list[0][0][0]
     assert call_args[0] == "biliup"
     assert call_args[1] == "upload"
     assert str(warehouse / "final.mp4") in call_args
@@ -74,11 +80,26 @@ def test_publish_calls_biliup_with_correct_args(warehouse: Path, cfg: BiliupConf
     assert "122" in call_args
     assert "--tag" in call_args
     assert "搬运,中文字幕" in call_args
+    assert "--submit" in call_args
+    assert "web" in call_args
 
 
 # ---------------------------------------------------------------------------
 # Failure cases
 # ---------------------------------------------------------------------------
+
+def test_publish_returns_false_when_bilibili_transcode_fails(warehouse: Path, cfg: BiliupConfig):
+    _make_final(warehouse)
+    upload_result = MagicMock(returncode=0, stdout="BV1234567890", stderr="")
+    show_result = MagicMock(
+        returncode=0,
+        stdout='{"archive":{"state":-16,"state_desc":"转码失败","duration":0,"had_passed":false}}',
+        stderr="",
+    )
+
+    with patch("subprocess.run", side_effect=[upload_result, show_result]):
+        assert publish_video(warehouse, "Title", cfg) is False
+
 
 def test_publish_returns_false_on_biliup_error(warehouse: Path, cfg: BiliupConfig):
     _make_final(warehouse)
@@ -103,3 +124,42 @@ def test_publish_detects_auth_error(warehouse: Path, cfg: BiliupConfig, caplog):
 
     assert result is False
     assert "biliup login" in caplog.text.lower() or "re-authenticate" in caplog.text.lower()
+
+
+def test_publish_classifies_dns_error_as_network_not_auth(warehouse: Path, cfg: BiliupConfig, caplog):
+    """DNS failures (which mention 'login' in the OAuth URL) must NOT be
+    classified as auth failures. Regression for the biliup passport DNS bug."""
+    _make_final(warehouse)
+    mock_result = MagicMock()
+    mock_result.returncode = 1
+    mock_result.stderr = (
+        "error sending request for url "
+        "(https://passport.bilibili.com/x/passport-login/oauth2/info?...)\n"
+        "dns error\n"
+        "failed to lookup address information: nodename nor servname provided"
+    )
+    import logging
+    with patch("subprocess.run", return_value=mock_result):
+        with caplog.at_level(logging.WARNING, logger="yt2bili.stages.publish"):
+            result = publish_video(warehouse, "Title", cfg)
+
+    assert result is False
+    assert "network error" in caplog.text.lower()
+    # Must NOT be flagged as an auth failure — would mislead user to re-login
+    assert "auth failure" not in caplog.text.lower()
+    assert "re-authenticate" not in caplog.text.lower()
+
+
+def test_publish_classifies_timeout_as_network(warehouse: Path, cfg: BiliupConfig, caplog):
+    _make_final(warehouse)
+    mock_result = MagicMock()
+    mock_result.returncode = 1
+    mock_result.stderr = "operation timed out"
+    import logging
+    with patch("subprocess.run", return_value=mock_result):
+        with caplog.at_level(logging.WARNING, logger="yt2bili.stages.publish"):
+            result = publish_video(warehouse, "Title", cfg)
+
+    assert result is False
+    assert "network error" in caplog.text.lower()
+    assert "auth failure" not in caplog.text.lower()

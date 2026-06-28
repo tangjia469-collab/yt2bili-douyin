@@ -16,8 +16,9 @@ def test_download_calls_ytdlp_with_correct_args(tmp_path: Path) -> None:
     # Create the expected output file so download_video doesn't fail post-run
     (tmp_path / "source.mp4").touch()
 
-    with patch("yt2bili.stages.download.subprocess.run", return_value=mock_result) as mock_run:
-        download_video("https://youtube.com/watch?v=abc123", tmp_path)
+    with patch("yt2bili.stages.download._has_video_stream", return_value=True):
+        with patch("yt2bili.stages.download.subprocess.run", return_value=mock_result) as mock_run:
+            download_video("https://youtube.com/watch?v=abc123", tmp_path)
 
     mock_run.assert_called_once()
     cmd = mock_run.call_args[0][0]  # first positional arg is the command list
@@ -35,8 +36,9 @@ def test_download_returns_true_on_success(tmp_path: Path) -> None:
     # Simulate yt-dlp writing source.mp4
     (tmp_path / "source.mp4").touch()
 
-    with patch("yt2bili.stages.download.subprocess.run", return_value=mock_result):
-        result = download_video("https://youtube.com/watch?v=abc123", tmp_path)
+    with patch("yt2bili.stages.download._has_video_stream", return_value=True):
+        with patch("yt2bili.stages.download.subprocess.run", return_value=mock_result):
+            result = download_video("https://youtube.com/watch?v=abc123", tmp_path)
 
     assert result is True
 

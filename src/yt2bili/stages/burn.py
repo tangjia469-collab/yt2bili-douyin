@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_ffmpeg() -> str:
+    ffmpeg_full = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
+    if ffmpeg_full.exists():
+        return str(ffmpeg_full)
+    return "ffmpeg"
+
+
+def _has_video_stream(path: Path) -> bool:
+    result = subprocess.run(
+        [
+            _resolve_ffmpeg().replace("/ffmpeg", "/ffprobe"),
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=codec_type",
+            "-of", "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return False
+    return bool(data.get("streams"))
 
 
 def burn_subtitles(
@@ -44,6 +74,10 @@ def burn_subtitles(
         logger.warning("burn_subtitles: zh.srt not found in %s", warehouse_dir)
         return False
 
+    if not _has_video_stream(source_mp4):
+        logger.warning("burn_subtitles: source.mp4 has no video stream in %s", warehouse_dir)
+        return False
+
     # Build the ASS override style string for ffmpeg subtitles filter.
     # Commas separate force_style key=value pairs, but a comma is also the
     # ffmpeg filtergraph separator. Since we pass -vf as a single argv element
@@ -66,11 +100,19 @@ def burn_subtitles(
     vf = f"subtitles={srt_path_str}:force_style={force_style}"
 
     cmd = [
-        "ffmpeg",
+        _resolve_ffmpeg(),
         "-y",
         "-i", str(source_mp4),
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
         "-vf", vf,
-        "-c:a", "copy",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "160k",
+        "-movflags", "+faststart",
         str(final_mp4),
     ]
 
@@ -87,6 +129,10 @@ def burn_subtitles(
 
     if not final_mp4.exists():
         logger.warning("ffmpeg exited 0 but final.mp4 not found in %s", warehouse_dir)
+        return False
+
+    if not _has_video_stream(final_mp4):
+        logger.warning("ffmpeg exited 0 but final.mp4 has no video stream in %s", warehouse_dir)
         return False
 
     logger.info("Subtitles burned → %s (%d bytes)", final_mp4, final_mp4.stat().st_size)

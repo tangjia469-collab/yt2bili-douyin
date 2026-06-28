@@ -1,5 +1,6 @@
 warehouse/
 logs/
+download.log
 config/secrets.yaml
 # Real config holds a plaintext MiniMax key — never commit it.
 config.yaml
@@ -23,3 +24,7 @@ __pycache__/
 htmlcov/
 dist/
 *.egg-info/
+.playwright-mcp/
+*.sqlite-shm
+*.sqlite-wal
+*.log

@@ -98,7 +98,7 @@ defaults:
     assert cfg.channels[0].priority == True
 
 
-def test_api_and_biliup_fields(tmp_path):
+def test_api_biliup_and_douyin_fields(tmp_path):
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text("""
 channels: []
@@ -112,11 +112,24 @@ biliup:
   tags:
     - "搬运"
     - "测试"
+douyin:
+  enabled: true
+  daily_publish_limit: 3
+  min_publish_gap_min: 15
+  publish_fail_threshold: 2
+  tags:
+    - "ASMR"
+    - "助眠"
 """)
     cfg = load_config(cfg_file)
     assert cfg.api.minimax_key == "test_key_abc"
     assert cfg.biliup.tid == 200
     assert cfg.biliup.tags == ["搬运", "测试"]
+    assert cfg.douyin.enabled is True
+    assert cfg.douyin.daily_publish_limit == 3
+    assert cfg.douyin.min_publish_gap_min == 15
+    assert cfg.douyin.publish_fail_threshold == 2
+    assert cfg.douyin.tags == ["ASMR", "助眠"]
 
 
 def test_missing_config_file_raises(tmp_path):

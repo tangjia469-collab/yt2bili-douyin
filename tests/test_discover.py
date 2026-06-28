@@ -139,6 +139,38 @@ def test_filter_new_none_known():
     assert len(result) == 2
 
 
+def test_fetch_video_metrics_parses_stdout_on_nonzero_exit():
+    """yt-dlp often exits non-zero but still emits valid JSON on stdout.
+    The fetcher must parse stdout regardless of return code, or quality
+    gating starves for samples and skips every video."""
+    discoverer = _make_discoverer()
+
+    fake_result = MagicMock()
+    fake_result.returncode = 1
+    fake_result.stdout = json.dumps({"like_count": 42, "comment_count": 7})
+    fake_result.stderr = "WARNING: some formats unavailable"
+
+    with patch("subprocess.run", return_value=fake_result):
+        metrics = discoverer._fetch_video_metrics("abc123")
+
+    assert metrics == {"like_count": 42, "comment_count": 7}
+
+
+def test_fetch_video_metrics_returns_none_on_empty_stdout():
+    """When yt-dlp emits no stdout at all, return None metrics (not crash)."""
+    discoverer = _make_discoverer()
+
+    fake_result = MagicMock()
+    fake_result.returncode = 1
+    fake_result.stdout = ""
+    fake_result.stderr = "network error"
+
+    with patch("subprocess.run", return_value=fake_result):
+        metrics = discoverer._fetch_video_metrics("abc123")
+
+    assert metrics == {"like_count": None, "comment_count": None}
+
+
 def test_channel_videos_url_supports_handle():
     """Configured YouTube @handles should be accepted directly."""
     discoverer = _make_discoverer()

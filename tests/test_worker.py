@@ -250,3 +250,59 @@ def test_run_worker_retries_failed(db, warehouse, monkeypatch):
     worker.run_worker(db, _config(), warehouse)
     # Retried translate → burned → ready, all in one pass.
     assert db.get_video("v1").stage == State.READY.value
+
+
+# --------------------------------------------------------------------------
+# cleanup_warehouse
+# --------------------------------------------------------------------------
+
+def test_cleanup_keeps_max_cached(db, warehouse):
+    """Old published dirs beyond max_cached are removed."""
+    for i in range(15):
+        vid = f"pub{i}"
+        _insert(db, vid=vid)
+        db.update_stage(vid, State.PUBLISHED)
+        d = warehouse / vid
+        d.mkdir()
+        (d / "final.mp4").write_bytes(b"\x00" * i)  # vary mtime
+
+    removed = worker.cleanup_warehouse(db, warehouse, max_cached=10)
+    remaining = [d.name for d in warehouse.iterdir() if d.is_dir()]
+    assert removed == 5
+    assert len(remaining) == 10
+
+
+def test_cleanup_never_removes_active_videos(db, warehouse):
+    """Videos in ready/processing states are kept even if old."""
+    # Insert an old active video.
+    _insert(db, vid="active1")
+    db.update_stage("active1", State.READY)
+    d = warehouse / "active1"
+    d.mkdir()
+    (d / "final.mp4").write_bytes(b"\x00")
+
+    # Insert 10 newer published videos.
+    for i in range(10):
+        vid = f"pub{i}"
+        _insert(db, vid=vid)
+        db.update_stage(vid, State.PUBLISHED)
+        dd = warehouse / vid
+        dd.mkdir()
+        (dd / "final.mp4").write_bytes(b"\x00" * (i + 10))
+
+    removed = worker.cleanup_warehouse(db, warehouse, max_cached=5)
+    remaining = {d.name for d in warehouse.iterdir() if d.is_dir()}
+    assert "active1" in remaining  # never removed
+    assert removed > 0
+
+
+def test_cleanup_noop_when_under_limit(db, warehouse):
+    """Nothing removed when total dirs <= max_cached."""
+    for i in range(3):
+        vid = f"v{i}"
+        _insert(db, vid=vid)
+        db.update_stage(vid, State.PUBLISHED)
+        (warehouse / vid).mkdir()
+
+    removed = worker.cleanup_warehouse(db, warehouse, max_cached=10)
+    assert removed == 0

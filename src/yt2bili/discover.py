@@ -172,18 +172,28 @@ class Discoverer:
         return entries
 
     def _fetch_video_metrics(self, video_id: str) -> Dict[str, Optional[int]]:
-        """Fetch like/comment counts for one video, returning None on failure."""
+        """Fetch like/comment counts for one video, returning None on failure.
+
+        yt-dlp often writes valid JSON to stdout even when it exits non-zero
+        (e.g. when some formats are unavailable or YouTube throttles). So we
+        use ``check=False`` and parse stdout regardless of exit code. This
+        rescues metrics that would otherwise be discarded, which is the main
+        cause of "insufficient samples" log spam during quality gating.
+        """
         url = f"https://www.youtube.com/watch?v={video_id}"
+        result = subprocess.run(
+            ["yt-dlp", "--skip-download", "-J", url],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if not result.stdout:
+            logger.warning("yt-dlp produced no output for %s (rc=%d)", video_id, result.returncode)
+            return {"like_count": None, "comment_count": None}
         try:
-            result = subprocess.run(
-                ["yt-dlp", "--skip-download", "-J", url],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
             data = json.loads(result.stdout)
-        except Exception as exc:
-            logger.warning("Failed to fetch metrics for %s: %s", video_id, exc)
+        except json.JSONDecodeError as exc:
+            logger.warning("Failed to parse yt-dlp JSON for %s: %s", video_id, exc)
             return {"like_count": None, "comment_count": None}
         return {
             "like_count": data.get("like_count"),

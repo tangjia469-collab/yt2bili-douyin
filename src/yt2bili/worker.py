@@ -15,6 +15,7 @@ text, and the worker moves on to the next video.
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +28,70 @@ from .stages.translate import translate_srt
 from .stages.burn import burn_subtitles
 
 logger = logging.getLogger(__name__)
+
+# States whose warehouse dirs must NOT be cleaned up — the worker or publisher
+# still needs them.
+_ACTIVE_STATES = {
+    State.DISCOVERED.value,
+    State.DOWNLOADED.value,
+    State.EN_SUBTITLED.value,
+    State.ZH_TRANSLATED.value,
+    State.BURNED.value,
+    State.PENDING_REVIEW.value,
+    State.READY.value,
+}
+
+
+def cleanup_warehouse(
+    db: Database,
+    warehouse_root: Path,
+    max_cached: int,
+) -> int:
+    """Remove the oldest warehouse dirs, keeping at most *max_cached* total.
+
+    Active videos always count toward the budget first. Any remaining slots
+    go to the newest non-active dirs.  Returns the number of directories
+    deleted.
+    """
+    warehouse_root = Path(warehouse_root)
+    if not warehouse_root.is_dir():
+        return 0
+
+    active_ids = {v.video_id for v in db.list_all() if v.stage in _ACTIVE_STATES}
+
+    # Separate active vs non-active dirs on disk.
+    active_dirs = []
+    inactive_dirs = []
+    for d in warehouse_root.iterdir():
+        if not d.is_dir():
+            continue
+        if d.name in active_ids:
+            active_dirs.append(d)
+        else:
+            inactive_dirs.append(d)
+
+    # Active dirs always occupy budget slots first.
+    remaining_budget = max(0, max_cached - len(active_dirs))
+
+    # Keep the newest inactive dirs up to the remaining budget.
+    inactive_dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    to_remove = inactive_dirs[remaining_budget:]
+
+    removed = 0
+    for d in to_remove:
+        try:
+            shutil.rmtree(d)
+            removed += 1
+            logger.info("Cleaned up warehouse dir %s", d.name)
+        except OSError as exc:
+            logger.warning("Failed to remove %s: %s", d, exc)
+    if removed:
+        logger.info(
+            "Warehouse cleanup: removed %d dirs, keeping %d active + %d cached",
+            removed, len(active_dirs), min(remaining_budget, len(inactive_dirs)),
+        )
+    return removed
+
 
 # Stages the worker actively drives. Terminal/queue states are excluded so the
 # worker never touches a published, skipped, ready, or awaiting-review video.
@@ -223,3 +288,7 @@ def run_worker(db: Database, config: Config, warehouse_root: Path) -> None:
             process_video(db, video.video_id, config, warehouse_root)
         except Exception:  # pragma: no cover - defensive
             logger.exception("worker crashed processing %s", video.video_id)
+
+    # Prune old warehouse dirs to cap disk usage.
+    max_cached = config.defaults.max_cached_videos
+    cleanup_warehouse(db, warehouse_root, max_cached)
