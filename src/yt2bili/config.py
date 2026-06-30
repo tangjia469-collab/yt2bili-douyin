@@ -33,6 +33,8 @@ class Defaults:
     quality_gate_recent_count: int = 20
     quality_gate_min_samples: int = 3
     max_cached_videos: int = 3
+    max_warehouse_gb: float = 8.0
+    min_free_disk_gb: float = 20.0
     subtitle_style: SubtitleStyle = field(default_factory=SubtitleStyle)
 
 

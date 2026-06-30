@@ -30,6 +30,9 @@ defaults:
   quality_gate_ratio: 0.8          # 点赞数或评论数达到该频道近期平均值的 80% 即通过
   quality_gate_recent_count: 20    # 用每个频道最近多少条视频计算平均值
   quality_gate_min_samples: 3      # 至少拿到多少条有效数据才启用门槛；不足则不跳过
+  max_cached_videos: 3             # warehouse 最多保留几个视频目录（active 状态永不自动删）
+  max_warehouse_gb: 8.0            # warehouse 总大小上限；超限时删除最旧 inactive 缓存
+  min_free_disk_gb: 20.0           # 磁盘剩余空间低于该值时，worker 停止重任务避免拖慢整机
   subtitle_style:                  # 硬烧中文字幕的样式
     font: "PingFang SC"        # 中文字体，macOS 自带（思源黑体需另装）
     font_size: 22

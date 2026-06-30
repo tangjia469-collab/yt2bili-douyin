@@ -42,16 +42,32 @@ _ACTIVE_STATES = {
 }
 
 
+def _dir_size(path: Path) -> int:
+    """Return recursive directory size in bytes, ignoring files that vanish."""
+    total = 0
+    try:
+        for p in path.rglob("*"):
+            try:
+                if p.is_file():
+                    total += p.stat().st_size
+            except OSError:
+                continue
+    except OSError:
+        return 0
+    return total
+
+
 def cleanup_warehouse(
     db: Database,
     warehouse_root: Path,
     max_cached: int,
+    max_bytes: int | None = None,
 ) -> int:
-    """Remove the oldest warehouse dirs, keeping at most *max_cached* total.
+    """Remove old cache dirs by count and optional byte budget.
 
-    Active videos always count toward the budget first. Any remaining slots
-    go to the newest non-active dirs.  Returns the number of directories
-    deleted.
+    Active videos are never removed. Inactive dirs are kept newest-first up to
+    ``max_cached`` total dirs, then further pruned until total warehouse size is
+    under ``max_bytes``. Returns the number of directories deleted.
     """
     warehouse_root = Path(warehouse_root)
     if not warehouse_root.is_dir():
@@ -59,7 +75,6 @@ def cleanup_warehouse(
 
     active_ids = {v.video_id for v in db.list_all() if v.stage in _ACTIVE_STATES}
 
-    # Separate active vs non-active dirs on disk.
     active_dirs = []
     inactive_dirs = []
     for d in warehouse_root.iterdir():
@@ -70,12 +85,26 @@ def cleanup_warehouse(
         else:
             inactive_dirs.append(d)
 
-    # Active dirs always occupy budget slots first.
     remaining_budget = max(0, max_cached - len(active_dirs))
-
-    # Keep the newest inactive dirs up to the remaining budget.
     inactive_dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+    keep_inactive = inactive_dirs[:remaining_budget]
     to_remove = inactive_dirs[remaining_budget:]
+
+    if max_bytes is not None:
+        active_size = sum(_dir_size(d) for d in active_dirs)
+        keep_with_size = [(d, _dir_size(d)) for d in keep_inactive]
+        total_size = active_size + sum(size for _, size in keep_with_size)
+        while keep_with_size and total_size > max_bytes:
+            d, size = keep_with_size.pop()  # oldest kept inactive
+            to_remove.append(d)
+            total_size -= size
+        if active_size > max_bytes:
+            logger.warning(
+                "Active warehouse dirs use %.2fGB, above configured cap %.2fGB; "
+                "active dirs are preserved and cannot be auto-deleted.",
+                active_size / (1024 ** 3), max_bytes / (1024 ** 3),
+            )
 
     removed = 0
     for d in to_remove:
@@ -88,9 +117,30 @@ def cleanup_warehouse(
     if removed:
         logger.info(
             "Warehouse cleanup: removed %d dirs, keeping %d active + %d cached",
-            removed, len(active_dirs), min(remaining_budget, len(inactive_dirs)),
+            removed, len(active_dirs), max(0, min(remaining_budget, len(inactive_dirs)) - removed),
         )
     return removed
+
+
+def _gb_to_bytes(value: float) -> int:
+    return int(value * 1024 ** 3)
+
+
+def ensure_disk_budget(warehouse_root: Path, max_warehouse_gb: float, min_free_disk_gb: float) -> bool:
+    """Return True if disk budgets are healthy enough to continue processing."""
+    warehouse_root = Path(warehouse_root)
+    warehouse_root.mkdir(parents=True, exist_ok=True)
+    usage = shutil.disk_usage(warehouse_root)
+    free_gb = usage.free / (1024 ** 3)
+    warehouse_gb = _dir_size(warehouse_root) / (1024 ** 3)
+    ok = free_gb >= min_free_disk_gb and warehouse_gb <= max_warehouse_gb
+    if not ok:
+        logger.error(
+            "Disk budget exceeded: warehouse=%.2fGB/%.2fGB, free=%.2fGB/%.2fGB. "
+            "Worker will skip processing until cleanup frees space.",
+            warehouse_gb, max_warehouse_gb, free_gb, min_free_disk_gb,
+        )
+    return ok
 
 
 # Stages the worker actively drives. Terminal/queue states are excluded so the
@@ -279,8 +329,21 @@ def process_video(
 def run_worker(db: Database, config: Config, warehouse_root: Path) -> None:
     """Scan all videos and advance any that are not in a terminal/queue state.
 
-    Failed videos are retried (one step) on each invocation.
+    Failed videos are retried (one step) on each invocation. The worker always
+    enforces warehouse count, byte cap, and free-disk budget before starting
+    expensive processing so cache growth cannot starve the rest of the machine.
     """
+    max_cached = config.defaults.max_cached_videos
+    max_bytes = _gb_to_bytes(config.defaults.max_warehouse_gb)
+    cleanup_warehouse(db, warehouse_root, max_cached, max_bytes=max_bytes)
+
+    if not ensure_disk_budget(
+        warehouse_root,
+        config.defaults.max_warehouse_gb,
+        config.defaults.min_free_disk_gb,
+    ):
+        return
+
     for video in db.list_all():
         if video.stage in _TERMINAL:
             continue
@@ -289,6 +352,12 @@ def run_worker(db: Database, config: Config, warehouse_root: Path) -> None:
         except Exception:  # pragma: no cover - defensive
             logger.exception("worker crashed processing %s", video.video_id)
 
-    # Prune old warehouse dirs to cap disk usage.
-    max_cached = config.defaults.max_cached_videos
-    cleanup_warehouse(db, warehouse_root, max_cached)
+        cleanup_warehouse(db, warehouse_root, max_cached, max_bytes=max_bytes)
+        if not ensure_disk_budget(
+            warehouse_root,
+            config.defaults.max_warehouse_gb,
+            config.defaults.min_free_disk_gb,
+        ):
+            break
+
+    cleanup_warehouse(db, warehouse_root, max_cached, max_bytes=max_bytes)

@@ -296,13 +296,59 @@ def test_cleanup_never_removes_active_videos(db, warehouse):
     assert removed > 0
 
 
+
 def test_cleanup_noop_when_under_limit(db, warehouse):
-    """Nothing removed when total dirs <= max_cached."""
+    """Nothing removed when total dirs and size are under limits."""
     for i in range(3):
         vid = f"v{i}"
         _insert(db, vid=vid)
         db.update_stage(vid, State.PUBLISHED)
-        (warehouse / vid).mkdir()
+        d = warehouse / vid
+        d.mkdir()
+        (d / "final.mp4").write_bytes(b"x")
 
-    removed = worker.cleanup_warehouse(db, warehouse, max_cached=10)
+    removed = worker.cleanup_warehouse(db, warehouse, max_cached=10, max_bytes=100)
     assert removed == 0
+
+
+def test_cleanup_prunes_by_size_budget(db, warehouse):
+    """Inactive dirs are removed until warehouse fits the byte budget."""
+    for i in range(3):
+        vid = f"pub{i}"
+        _insert(db, vid=vid)
+        db.update_stage(vid, State.PUBLISHED)
+        d = warehouse / vid
+        d.mkdir()
+        (d / "final.mp4").write_bytes(b"x" * 10)
+
+    removed = worker.cleanup_warehouse(db, warehouse, max_cached=3, max_bytes=15)
+    remaining = [d.name for d in warehouse.iterdir() if d.is_dir()]
+    assert removed == 2
+    assert len(remaining) == 1
+
+
+def test_cleanup_preserves_active_even_when_size_budget_exceeded(db, warehouse, caplog):
+    """Active dirs are never deleted even if they exceed the byte cap."""
+    _insert(db, vid="active1")
+    db.update_stage("active1", State.READY)
+    d = warehouse / "active1"
+    d.mkdir()
+    (d / "final.mp4").write_bytes(b"x" * 20)
+
+    removed = worker.cleanup_warehouse(db, warehouse, max_cached=1, max_bytes=10)
+    assert removed == 0
+    assert (warehouse / "active1").exists()
+
+
+def test_run_worker_skips_processing_when_disk_budget_exceeded(db, warehouse, monkeypatch):
+    """Worker should not start expensive stages when free-space budget fails."""
+    _insert(db, vid="v1")
+    cfg = _config()
+    cfg.defaults.max_warehouse_gb = 1
+    cfg.defaults.min_free_disk_gb = 999999
+    called = []
+    monkeypatch.setattr(worker, "process_video", lambda *args, **kwargs: called.append(True))
+
+    worker.run_worker(db, cfg, warehouse)
+    assert called == []
+    assert db.get_video("v1").stage == State.DISCOVERED.value
