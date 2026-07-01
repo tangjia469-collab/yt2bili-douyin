@@ -17,10 +17,17 @@ def _resolve_ffmpeg() -> str:
     return "ffmpeg"
 
 
+def _resolve_ffprobe() -> str:
+    ffprobe_full = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffprobe")
+    if ffprobe_full.exists():
+        return str(ffprobe_full)
+    return "ffprobe"
+
+
 def _has_video_stream(path: Path) -> bool:
     result = subprocess.run(
         [
-            _resolve_ffmpeg().replace("/ffmpeg", "/ffprobe"),
+            _resolve_ffprobe(),
             "-v", "error",
             "-select_streams", "v:0",
             "-show_entries", "stream=codec_type",
